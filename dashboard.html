@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Dashboard Pegawai</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f6fa; }
+    .sidebar { height: 100vh; background: #1e3a8a; color: white; padding: 20px 10px; position: fixed; top: 0; left: 0; width: 230px; }
+    .sidebar h3 { font-weight: bold; margin-bottom: 30px; }
+    .sidebar a { display: block; color: white; padding: 10px 15px; margin: 5px 0; border-radius: 8px; text-decoration: none; cursor: pointer; }
+    .sidebar a:hover, .sidebar a.active { background: #334155; }
+    .content { margin-left: 240px; padding: 20px; }
+    .header { background: #0a1f44; color: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+    .card-summary { border-radius: 12px; box-shadow: 0 3px 6px rgba(0,0,0,0.1); }
+    .chart-container { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
+    .ranking-table { background: white; border-radius: 15px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    .ranking-table h5 { font-weight: bold; color: #0a1f44; }
+    .table-hover tbody tr:hover { background-color: #f1f5f9; transition: 0.2s ease-in-out; }
+    .table thead th { font-size: 0.9rem; letter-spacing: 0.5px; text-transform: uppercase; }
+    .page { display: none; }
+    .page.active { display: block; }
+    footer { text-align: center; padding: 10px; margin-top: 20px; background: #0a1f44; color: white; border-radius: 10px; }
+  </style>
+</head>
+<body>
+  <div class="sidebar">
+    <h3>Dashboard Kinerja</h3>
+    <a class="nav-link active" data-page="dashboard">📊 Dashboard</a>
+    <a class="nav-link" data-page="pegawai">👥 Pegawai</a>
+    <a class="nav-link" data-page="pengaturan">⚙️ Pengaturan</a>
+  </div>
+
+  <div class="content">
+    <!-- DASHBOARD -->
+    <div id="dashboard" class="page active">
+      <div class="header">
+        <h2>Dashboard Kinerja Pegawai</h2>
+        <p>Data otomatis dari Google Sheets</p>
+      </div>
+
+      <div class="row" id="top3-cards"></div>
+
+      <div class="row">
+        <div class="col-md-8">
+          <div class="chart-container">
+            <h5>Top 5 Pegawai</h5>
+            <canvas id="barChart"></canvas>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="chart-container">
+            <h5>Distribusi Kategori Kinerja</h5>
+            <canvas id="pieChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ranking Pegawai -->
+      <div class="ranking-table mt-4">
+        <h5 class="mb-3"> Ranking Pegawai</h5>
+        <div class="table-responsive">
+          <table class="table table-hover align-middle">
+            <thead class="table-dark">
+              <tr>
+                <th scope="col" style="width: 80px;">Rank</th>
+                <th scope="col">Nama Pegawai</th>
+                <th scope="col" class="text-center">Total Skor</th>
+                <th scope="col" class="text-center">Ketepatan Waktu</th>
+              </tr>
+            </thead>
+            <tbody id="ranking-table-body">
+              <!-- Data dari JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <footer>&copy; 2025 Dashboard Kinerja Pegawai</footer>
+    </div>
+
+    <!-- PEGAWAI -->
+    <div id="pegawai" class="page">
+      <div class="header"><h2>👥 Data Pegawai</h2></div>
+      <div class="p-4 bg-white rounded shadow-sm">
+        <p class="text-muted">Halaman ini masih kosong. Sedang dalam pengembangan.</p>
+      </div>
+    </div>
+
+    <!-- PENGATURAN -->
+    <div id="pengaturan" class="page">
+      <div class="header"><h2>⚙️ Pengaturan</h2></div>
+      <div class="p-4 bg-white rounded shadow-sm">
+        <p class="text-muted">Belum ada pengaturan yang tersedia.</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSW546pVkzUtvwTJsm-mES6bODS9TLkZ84XdLzYG7p5HMdxKa8FcmT8yUtOEEE9ej0yfOP7cH_fifG8/pub?gid=0&single=true&output=csv";
+    const NAME_HEADER = "Nama Pegawai";
+    const TOTAL_HEADER = "Total Skor";
+    const KETEPATAN_HEADER = "Ketepatan Waktu";
+    const TUGAS_HEADERS = ["Tugas 1","Tugas 2","Tugas 3","Tugas 4"];
+
+    function mapRowToItem(row) {
+      const keys = Object.keys(row);
+      const nameKey = NAME_HEADER in row ? NAME_HEADER : keys[0];
+      const totalKey = TOTAL_HEADER in row ? TOTAL_HEADER : keys[1];
+      const ketepatanKey = KETEPATAN_HEADER in row ? KETEPATAN_HEADER : keys[2];
+
+      const nama = (row[nameKey]||'').trim();
+      let total = parseFloat((row[totalKey]||'0').replace(/[^\d.-]/g,'')) || 0;
+      const ketepatan = (row[ketepatanKey]||'').trim();
+      return { nama, total, ketepatan, row };
+    }
+
+    async function fetchData() {
+      const res = await fetch(SHEET_CSV_URL);
+      const text = await res.text();
+      const rows = text.split("\n").map(r=>r.split(","));
+      const headers = rows[0].map(h=>h.trim());
+      return rows.slice(1).map(r=>{
+        let obj = {};
+        headers.forEach((h,i)=> obj[h] = r[i] || '');
+        return mapRowToItem(obj);
+      }).filter(d=>d.nama);
+    }
+
+    function renderTop3(data) {
+      const container = document.getElementById("top3-cards");
+      container.innerHTML = "";
+      const colors = ["#FFD700","#C0C0C0","#CD7F32"];
+      data.slice(0,3).forEach((d,i)=>{
+        container.innerHTML += `
+          <div class="col-md-4 mb-3">
+            <div class="card card-summary text-center p-3" style="border-top:5px solid ${colors[i]}">
+              <h6>Ranking ${i+1}</h6>
+              <h4>${d.nama}</h4>
+              <p class="fw-bold">${d.total}</p>
+            </div>
+          </div>`;
+      });
+    }
+
+    function renderBarChart(data) {
+      const ctx = document.getElementById('barChart').getContext('2d');
+      if(window.barChartInstance) window.barChartInstance.destroy();
+      window.barChartInstance = new Chart(ctx, {
+        type:'bar',
+        data: {
+          labels:data.slice(0,5).map(d=>d.nama),
+          datasets:[{ label:'Total Skor', data:data.slice(0,5).map(d=>d.total), backgroundColor:'#ffc107' }]
+        },
+        options:{ plugins:{ legend:{display:false}}, scales:{y:{beginAtZero:true}} }
+      });
+    }
+
+    function renderPieChart(data) {
+      const kategori = {};
+      data.forEach(d=>{
+        TUGAS_HEADERS.forEach(tugas=>{
+          const st = (d.row[tugas]||'').trim();
+          if(st) kategori[st] = (kategori[st]||0)+1;
+        });
+      });
+      const ctx = document.getElementById('pieChart').getContext('2d');
+      if(window.pieChartInstance) window.pieChartInstance.destroy();
+      window.pieChartInstance = new Chart(ctx, {
+        type:'pie',
+        data:{ labels:Object.keys(kategori), datasets:[{ data:Object.values(kategori), backgroundColor:["#0a1f44","#ffc107","#d9534f","#28a745"] }] }
+      });
+    }
+
+    function renderTable(data) {
+      const tbody = document.getElementById("ranking-table-body");
+      tbody.innerHTML = "";
+      data.forEach((d,i)=>{
+        tbody.innerHTML += `
+          <tr>
+            <td class="fw-bold">${i+1}</td>
+            <td>${d.nama}</td>
+            <td class="text-center">${d.total}</td>
+            <td class="text-center">${d.ketepatan}</td>
+          </tr>`;
+      });
+    }
+
+    async function init() {
+      let data = await fetchData();
+      data.sort((a,b)=>b.total - a.total);
+      renderTop3(data);
+      renderBarChart(data);
+      renderPieChart(data);
+      renderTable(data);
+    }
+
+    init();
+    setInterval(init,60000);
+
+    const links = document.querySelectorAll(".nav-link");
+    const pages = document.querySelectorAll(".page");
+    links.forEach(link=>{
+      link.addEventListener("click", ()=>{
+        links.forEach(l=>l.classList.remove("active"));
+        link.classList.add("active");
+        const page = link.dataset.page;
+        pages.forEach(p=>p.classList.remove("active"));
+        document.getElementById(page).classList.add("active");
+      });
+    });
+  </script>
+</body>
+</html>
